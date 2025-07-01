@@ -41,8 +41,8 @@ android {
 }
 
 dependencies {
-    implementation(project(":xlog"))
-    //implementation(libs.xlog)
+    // implementation(project(":xlog"))
+    implementation(libs.xlog)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

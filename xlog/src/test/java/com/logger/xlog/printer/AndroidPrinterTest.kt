@@ -19,7 +19,9 @@ class AndroidPrinterTest {
         XLogUtil.beforeTest()
         XLog.init(LogLevel.ALL, object : AndroidPrinter() {
             override fun printChunk(logLevel: Int, tag: String?, msg: String) {
-                logContainer.add(LogItem(logLevel, tag, msg))
+                tag?.let {
+                    logContainer.add(LogItem(logLevel, it, msg))
+                }
             }
         })
     }

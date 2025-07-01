@@ -1,21 +1,12 @@
 package com.logger.xlog
 
+import android.os.Build
 import com.logger.xlog.Logger.Builder
-import com.logger.xlog.XLog.assertInitialization
-import com.logger.xlog.formatter.border.BorderFormatter
-import com.logger.xlog.formatter.message.json.JsonFormatter
+import com.logger.xlog.extensions.safePlus
 import com.logger.xlog.formatter.message.obj.ObjectFormatter
-import com.logger.xlog.formatter.message.throwable.ThrowableFormatter
-import com.logger.xlog.formatter.message.xml.XmlFormatter
-import com.logger.xlog.formatter.stacktrace.StackTraceFormatter
-import com.logger.xlog.formatter.thread.ThreadFormatter
-import com.logger.xlog.interceptor.Interceptor
-import com.logger.xlog.internal.DefaultsFactory.builtinObjectFormatters
 import com.logger.xlog.internal.Platform.Companion.get
-import com.logger.xlog.internal.SystemCompat
 import com.logger.xlog.internal.util.StackTraceUtil
-import com.logger.xlog.printer.Printer
-import com.logger.xlog.printer.PrinterSet
+import java.util.regex.Pattern
 
 /**
  * A logger is used to do the real logging work, can use multiple log printers to print the log.
@@ -28,98 +19,73 @@ import com.logger.xlog.printer.PrinterSet
  * the [Builder.build] to build a [Logger], and then you can log using
  * the [Logger] assuming that you are using the [XLog] directly.
  */
-class Logger {
-    /**
-     * The log configuration which you should respect to when logging.
-     */
-    private var logConf: LogConfiguration
+class Logger internal constructor(override val loggerConfig: ILoggerConfig) :
+    ILoggerConfig by loggerConfig, ILogger {
+    override var dynamicTag: Boolean = false
+
+    @get:JvmSynthetic
+    internal val explicitTag = ThreadLocal<String>()
 
     /**
-     * The log printer used to print the logs.
-     */
-    private var printer: Printer? = null
-
-    /**
-     * Construct a logger.
+     * 获取特定对象的 [ObjectFormatter]。
      *
-     * @param logConfiguration the log configuration which you should respect to when logging
-     * @param printer          the log printer used to print the log
+     * @param obj 要格式化的对象
+     * @param <T> 对象的类型
+     * @return 匹配的对象格式化器，如果没有找到则返回 null
      */
-    internal constructor(logConfiguration: LogConfiguration, printer: Printer?) {
-        this.logConf = logConfiguration
-        this.printer = printer
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> getObjectFormatter(obj: T): ObjectFormatter<in T>? {
+        if (loggerParams.objectFormatters.isNullOrEmpty()) {
+            return null
+        }
+
+        var clazz: Class<in T>
+        var superClazz: Class<in T>? = obj!!::class.java as Class<in T>
+        var formatter: ObjectFormatter<in T>?
+        do {
+            clazz = superClazz!!
+            formatter = loggerParams.objectFormatters!![clazz] as ObjectFormatter<in T>?
+            superClazz = clazz.superclass
+        } while (formatter == null && superClazz != null)
+        return formatter
     }
 
     /**
-     * Construct a logger using builder.
+     * Whether logs with specific level is loggable.
      *
-     * @param builder the logger builder
+     * @param level the specific level
+     * @return true if loggable, false otherwise
      */
-    internal constructor(builder: Builder) {
-        val logConfigBuilder = LogConfiguration.Builder(
-            XLog.sLogConfiguration
-        )
+    override fun isLoggable(level: Int): Boolean {
+        return level >= loggerParams.logLevel
+    }
 
-        if (builder.logLevel != 0) {
-            logConfigBuilder.logLevel(builder.logLevel)
-        }
+    override fun tag(tag: String): Logger {
+        explicitTag.set(tag)
+        return this
+    }
 
-        if (builder.tag != null) {
-            logConfigBuilder.tag(builder.tag!!)
-        }
-
-        if (builder.threadSet) {
-            if (builder.withThread) {
-                logConfigBuilder.enableThreadInfo()
-            } else {
-                logConfigBuilder.disableThreadInfo()
-            }
-        }
-        if (builder.stackTraceSet) {
-            if (builder.withStackTrace) {
-                logConfigBuilder.enableStackTrace(builder.stackTraceOrigin, builder.stackTraceDepth)
-            } else {
-                logConfigBuilder.disableStackTrace()
-            }
-        }
-        if (builder.borderSet) {
-            if (builder.withBorder) {
-                logConfigBuilder.enableBorder()
-            } else {
-                logConfigBuilder.disableBorder()
-            }
+    private fun getCurrentTag(): String {
+        val customTag = explicitTag.get()
+        if (customTag != null) {
+            explicitTag.remove()
+            return customTag
         }
 
-        if (builder.jsonFormatter != null) {
-            logConfigBuilder.jsonFormatter(builder.jsonFormatter)
+        if (dynamicTag) {
+            return getDynamicTag() ?: loggerParams.tag
         }
-        if (builder.xmlFormatter != null) {
-            logConfigBuilder.xmlFormatter(builder.xmlFormatter)
-        }
-        if (builder.throwableFormatter != null) {
-            logConfigBuilder.throwableFormatter(builder.throwableFormatter)
-        }
-        if (builder.threadFormatter != null) {
-            logConfigBuilder.threadFormatter(builder.threadFormatter)
-        }
-        if (builder.stackTraceFormatter != null) {
-            logConfigBuilder.stackTraceFormatter(builder.stackTraceFormatter)
-        }
-        if (builder.borderFormatter != null) {
-            logConfigBuilder.borderFormatter(builder.borderFormatter)
-        }
-        if (builder.objectFormatters != null) {
-            logConfigBuilder.objectFormatters(builder.objectFormatters!!)
-        }
-        if (builder.interceptors != null) {
-            logConfigBuilder.interceptors(builder.interceptors)
-        }
-        logConf = logConfigBuilder.build()
 
-        printer = if (builder.printer != null) {
-            builder.printer
+        return loggerParams.tag
+    }
+
+    private fun clipTag(tag: String): String {
+        return if (tag.length <= MAX_TAG_LENGTH || Build.VERSION.SDK_INT >= 26) {
+            // 若未超过限制或系统版本足够高，直接返回标签
+            tag
         } else {
-            XLog.sPrinter
+            // 若超过限制，截取前 MAX_TAG_LENGTH 个字符作为标签
+            tag.substring(0, MAX_TAG_LENGTH)
         }
     }
 
@@ -127,10 +93,10 @@ class Logger {
      * Log an object with level [LogLevel.VERBOSE].
      *
      * @param obj the object to log
-     * @see Builder.addObjectFormatter
-     * 
+     * @see ILoggerConfig.addObjectFormatter
+     *
      */
-    fun v(obj: Any?) {
+    override fun v(obj: Any?) {
         println(LogLevel.VERBOSE, obj)
     }
 
@@ -139,27 +105,18 @@ class Logger {
      *
      * @param array the array to log
      */
-    fun v(array: Array<Any>) {
+    override fun v(array: Array<Any>) {
         println(LogLevel.VERBOSE, array)
     }
 
     /**
      * Log a message with level [LogLevel.VERBOSE].
      *
-     * @param format the format of the message to log
+     * @param msg the format of the message to log
      * @param args   the arguments of the message to log
      */
-    fun v(format: String?, vararg args: Any) {
-        println(LogLevel.VERBOSE, format, *args)
-    }
-
-    /**
-     * Log a message with level [LogLevel.VERBOSE].
-     *
-     * @param msg the message to log
-     */
-    fun v(msg: String?) {
-        println(LogLevel.VERBOSE, msg)
+    override fun v(msg: String?, vararg args: Any) {
+        println(LogLevel.VERBOSE, msg, *args)
     }
 
     /**
@@ -168,7 +125,7 @@ class Logger {
      * @param msg the message to log
      * @param tr  the throwable to be log
      */
-    fun v(msg: String?, tr: Throwable) {
+    override fun v(msg: String?, tr: Throwable) {
         println(LogLevel.VERBOSE, msg, tr)
     }
 
@@ -176,10 +133,10 @@ class Logger {
      * Log an object with level [LogLevel.DEBUG].
      *
      * @param obj the object to log
-     * @see Builder.addObjectFormatter
-     * 
+     * @see ILoggerConfig.addObjectFormatter
+     *
      */
-    fun d(obj: Any?) {
+    override fun d(obj: Any?) {
         println(LogLevel.DEBUG, obj)
     }
 
@@ -188,27 +145,18 @@ class Logger {
      *
      * @param array the array to log
      */
-    fun d(array: Array<Any>) {
+    override fun d(array: Array<Any>) {
         println(LogLevel.DEBUG, array)
     }
 
     /**
      * Log a message with level [LogLevel.DEBUG].
      *
-     * @param format the format of the message to log, null if just need to concat arguments
+     * @param msg the format of the message to log, null if just need to concat arguments
      * @param args   the arguments of the message to log
      */
-    fun d(format: String?, vararg args: Any) {
-        println(LogLevel.DEBUG, format, *args)
-    }
-
-    /**
-     * Log a message with level [LogLevel.DEBUG].
-     *
-     * @param msg the message to log
-     */
-    fun d(msg: String?) {
-        println(LogLevel.DEBUG, msg)
+    override fun d(msg: String?, vararg args: Any) {
+        println(LogLevel.DEBUG, msg, *args)
     }
 
     /**
@@ -217,7 +165,7 @@ class Logger {
      * @param msg the message to log
      * @param tr  the throwable to be log
      */
-    fun d(msg: String?, tr: Throwable) {
+    override fun d(msg: String?, tr: Throwable) {
         println(LogLevel.DEBUG, msg, tr)
     }
 
@@ -225,10 +173,10 @@ class Logger {
      * Log an object with level [LogLevel.INFO].
      *
      * @param obj the object to log
-     * @see Builder.addObjectFormatter
-     * 
+     * @see ILoggerConfig.addObjectFormatter
+     *
      */
-    fun i(obj: Any?) {
+    override fun i(obj: Any?) {
         println(LogLevel.INFO, obj)
     }
 
@@ -237,27 +185,18 @@ class Logger {
      *
      * @param array the array to log
      */
-    fun i(array: Array<Any>) {
+    override fun i(array: Array<Any>) {
         println(LogLevel.INFO, array)
     }
 
     /**
      * Log a message with level [LogLevel.INFO].
      *
-     * @param format the format of the message to log, null if just need to concat arguments
+     * @param msg the format of the message to log, null if just need to concat arguments
      * @param args   the arguments of the message to log
      */
-    fun i(format: String?, vararg args: Any) {
-        println(LogLevel.INFO, format, *args)
-    }
-
-    /**
-     * Log a message with level [LogLevel.INFO].
-     *
-     * @param msg the message to log
-     */
-    fun i(msg: String?) {
-        println(LogLevel.INFO, msg)
+    override fun i(msg: String?, vararg args: Any) {
+        println(LogLevel.INFO, msg, *args)
     }
 
     /**
@@ -266,7 +205,7 @@ class Logger {
      * @param msg the message to log
      * @param tr  the throwable to be log
      */
-    fun i(msg: String?, tr: Throwable) {
+    override fun i(msg: String?, tr: Throwable) {
         println(LogLevel.INFO, msg, tr)
     }
 
@@ -274,10 +213,10 @@ class Logger {
      * Log an object with level [LogLevel.WARN].
      *
      * @param obj the object to log
-     * @see Builder.addObjectFormatter
-     * 
+     * @see ILoggerConfig.addObjectFormatter
+     *
      */
-    fun w(obj: Any?) {
+    override fun w(obj: Any?) {
         println(LogLevel.WARN, obj)
     }
 
@@ -286,27 +225,18 @@ class Logger {
      *
      * @param array the array to log
      */
-    fun w(array: Array<Any>) {
+    override fun w(array: Array<Any>) {
         println(LogLevel.WARN, array)
     }
 
     /**
      * Log a message with level [LogLevel.WARN].
      *
-     * @param format the format of the message to log, null if just need to concat arguments
+     * @param msg the format of the message to log, null if just need to concat arguments
      * @param args   the arguments of the message to log
      */
-    fun w(format: String?, vararg args: Any) {
-        println(LogLevel.WARN, format, *args)
-    }
-
-    /**
-     * Log a message with level [LogLevel.WARN].
-     *
-     * @param msg the message to log
-     */
-    fun w(msg: String?) {
-        println(LogLevel.WARN, msg)
+    override fun w(msg: String?, vararg args: Any) {
+        println(LogLevel.WARN, msg, *args)
     }
 
     /**
@@ -315,7 +245,7 @@ class Logger {
      * @param msg the message to log
      * @param tr  the throwable to be log
      */
-    fun w(msg: String?, tr: Throwable) {
+    override fun w(msg: String?, tr: Throwable) {
         println(LogLevel.WARN, msg, tr)
     }
 
@@ -323,10 +253,10 @@ class Logger {
      * Log an object with level [LogLevel.ERROR].
      *
      * @param obj the object to log
-     * @see Builder.addObjectFormatter
-     * 
+     * @see ILoggerConfig.addObjectFormatter
+     *
      */
-    fun e(obj: Any?) {
+    override fun e(obj: Any?) {
         println(LogLevel.ERROR, obj)
     }
 
@@ -335,27 +265,18 @@ class Logger {
      *
      * @param array the array to log
      */
-    fun e(array: Array<Any>) {
+    override fun e(array: Array<Any>) {
         println(LogLevel.ERROR, array)
     }
 
     /**
      * Log a message with level [LogLevel.ERROR].
      *
-     * @param format the format of the message to log, null if just need to concat arguments
+     * @param msg the format of the message to log, null if just need to concat arguments
      * @param args   the arguments of the message to log
      */
-    fun e(format: String?, vararg args: Any) {
-        println(LogLevel.ERROR, format, *args)
-    }
-
-    /**
-     * Log a message with level [LogLevel.ERROR].
-     *
-     * @param msg the message to log
-     */
-    fun e(msg: String?) {
-        println(LogLevel.ERROR, msg)
+    override fun e(msg: String?, vararg args: Any) {
+        println(LogLevel.ERROR, msg, *args)
     }
 
     /**
@@ -364,7 +285,7 @@ class Logger {
      * @param msg the message to log
      * @param tr  the throwable to be log
      */
-    fun e(msg: String?, tr: Throwable) {
+    override fun e(msg: String?, tr: Throwable) {
         println(LogLevel.ERROR, msg, tr)
     }
 
@@ -372,10 +293,10 @@ class Logger {
      * Log an object with level [LogLevel.ASSERT].
      *
      * @param obj the object to log
-     * @see Builder.addObjectFormatter
-     * 
+     * @see ILoggerConfig.addObjectFormatter
+     *
      */
-    fun wtf(obj: Any?) {
+    override fun wtf(obj: Any?) {
         println(LogLevel.ASSERT, obj)
     }
 
@@ -384,27 +305,18 @@ class Logger {
      *
      * @param array the array to log
      */
-    fun wtf(array: Array<Any>) {
+    override fun wtf(array: Array<Any>) {
         println(LogLevel.ASSERT, array)
     }
 
     /**
      * Log a message with level [LogLevel.ASSERT].
      *
-     * @param format the format of the message to log, null if just need to concat arguments
+     * @param msg the format of the message to log, null if just need to concat arguments
      * @param args   the arguments of the message to log
      */
-    fun wtf(format: String?, vararg args: Any) {
-        println(LogLevel.ASSERT, format, *args)
-    }
-
-    /**
-     * Log a message with level [LogLevel.ASSERT].
-     *
-     * @param msg the message to log
-     */
-    fun wtf(msg: String?) {
-        println(LogLevel.ASSERT, msg)
+    override fun wtf(msg: String?, vararg args: Any) {
+        println(LogLevel.ASSERT, msg, *args)
     }
 
     /**
@@ -413,7 +325,7 @@ class Logger {
      * @param msg the message to log
      * @param tr  the throwable to be log
      */
-    fun wtf(msg: String?, tr: Throwable) {
+    override fun wtf(msg: String?, tr: Throwable) {
         println(LogLevel.ASSERT, msg, tr)
     }
 
@@ -422,10 +334,10 @@ class Logger {
      *
      * @param logLevel the specific log level
      * @param obj   the object to log
-     * @see Builder.addObjectFormatter
-     * 
+     * @see ILoggerConfig.addObjectFormatter
+     *
      */
-    fun log(logLevel: Int, obj: Any?) {
+    override fun log(logLevel: Int, obj: Any?) {
         println(logLevel, obj)
     }
 
@@ -434,9 +346,9 @@ class Logger {
      *
      * @param logLevel the specific log level
      * @param array    the array to log
-     * 
+     *
      */
-    fun log(logLevel: Int, array: Array<Any>) {
+    override fun log(logLevel: Int, array: Array<Any>) {
         println(logLevel, array)
     }
 
@@ -446,21 +358,10 @@ class Logger {
      * @param logLevel the specific log level
      * @param format   the format of the message to log, null if just need to concat arguments
      * @param args     the arguments of the message to log
-     * 
-     */
-    fun log(logLevel: Int, format: String?, vararg args: Any) {
-        println(logLevel, format, *args)
-    }
-
-    /**
-     * Log a message with specific log level.
      *
-     * @param logLevel the specific log level
-     * @param msg      the message to log
-     * 
      */
-    fun log(logLevel: Int, msg: String?) {
-        println(logLevel, msg)
+    override fun log(logLevel: Int, format: String?, vararg args: Any) {
+        println(logLevel, format, *args)
     }
 
     /**
@@ -469,9 +370,9 @@ class Logger {
      * @param logLevel the specific log level
      * @param msg      the message to log
      * @param tr       the throwable to be log
-     * 
+     *
      */
-    fun log(logLevel: Int, msg: String?, tr: Throwable) {
+    override fun log(logLevel: Int, msg: String?, tr: Throwable) {
         println(logLevel, msg, tr)
     }
 
@@ -480,11 +381,11 @@ class Logger {
      *
      * @param json the JSON string to log
      */
-    fun json(json: String, logLevel: Int = LogLevel.DEBUG) {
-        if (logLevel < logConf.logLevel) {
+    override fun json(json: String, logLevel: Int) {
+        if (logLevel < loggerParams.logLevel) {
             return
         }
-        printlnInternal(logLevel, logConf.jsonFormatter!!.format(json))
+        printlnInternal(logLevel, loggerParams.jsonFormatter!!.format(json))
     }
 
     /**
@@ -492,11 +393,11 @@ class Logger {
      *
      * @param xml the XML string to log
      */
-    fun xml(xml: String, logLevel: Int = LogLevel.DEBUG) {
-        if (logLevel < logConf.logLevel) {
+    override fun xml(xml: String, logLevel: Int) {
+        if (logLevel < loggerParams.logLevel) {
             return
         }
-        printlnInternal(logLevel, logConf.xmlFormatter!!.format(xml))
+        printlnInternal(logLevel, loggerParams.xmlFormatter!!.format(xml))
     }
 
     /**
@@ -505,13 +406,13 @@ class Logger {
      * @param logLevel the log level of the printing object
      * @param obj   the object to print
      */
-    private fun <T> println(logLevel: Int, obj: T?) {
-        if (logLevel < logConf.logLevel) {
+    override fun <T> println(logLevel: Int, obj: T?) {
+        if (logLevel < loggerParams.logLevel) {
             return
         }
         val objectString: String
         if (obj != null) {
-            val objectFormatter: ObjectFormatter<in T>? = logConf.getObjectFormatter(obj)
+            val objectFormatter: ObjectFormatter<in T>? = getObjectFormatter(obj)
             objectString = objectFormatter?.format(obj) ?: obj.toString()
         } else {
             objectString = "null"
@@ -525,8 +426,8 @@ class Logger {
      * @param logLevel the log level of the printing array
      * @param array    the array to print
      */
-    private fun println(logLevel: Int, array: Array<Any>) {
-        if (logLevel < logConf.logLevel) {
+    override fun println(logLevel: Int, array: Array<Any>) {
+        if (logLevel < loggerParams.logLevel) {
             return
         }
         printlnInternal(logLevel, array.contentDeepToString())
@@ -536,27 +437,14 @@ class Logger {
      * Print a log in a new line.
      *
      * @param logLevel the log level of the printing log
-     * @param format   the format of the printing log, null if just need to concat arguments
+     * @param msg   the format of the printing log, null if just need to concat arguments
      * @param args     the arguments of the printing log
      */
-    private fun println(logLevel: Int, format: String?, vararg args: Any) {
-        if (logLevel < logConf.logLevel) {
+    override fun println(logLevel: Int, msg: String?, vararg args: Any) {
+        if (logLevel < loggerParams.logLevel) {
             return
         }
-        printlnInternal(logLevel, formatArgs(format, *args))
-    }
-
-    /**
-     * Print a log in a new line.
-     *
-     * @param logLevel the log level of the printing log
-     * @param msg      the message you would like to log
-     *//*package*/
-    fun println(logLevel: Int, msg: String?) {
-        if (logLevel < logConf.logLevel) {
-            return
-        }
-        printlnInternal(logLevel, msg)
+        printlnInternal(logLevel, formatArgs(msg, *args))
     }
 
     /**
@@ -566,11 +454,15 @@ class Logger {
      * @param msg      the message you would like to log
      * @param tr       a throwable object to log
      */
-    private fun println(logLevel: Int, msg: String?, tr: Throwable) {
-        if (logLevel < logConf.logLevel) {
+    override fun println(logLevel: Int, msg: String?, tr: Throwable) {
+        if (logLevel < loggerParams.logLevel) {
             return
         }
-        printlnInternal(logLevel, msg.safePlus() + logConf.throwableFormatter!!.format(tr))
+        printlnInternal(logLevel, msg.safePlus() + loggerParams.throwableFormatter!!.format(tr))
+    }
+
+    override fun getStackTraceString(tr: Throwable): String {
+        return StackTraceUtil.getStackTraceString(tr)
     }
 
     /**
@@ -582,27 +474,27 @@ class Logger {
     private fun printlnInternal(logLevel: Int, message: String?) {
         var logLvl = logLevel
         var msg = message
-        var tag = logConf.tag
-        var thread = if (logConf.withThread) {
-            logConf.threadFormatter!!.format(Thread.currentThread())
+        var tag = clipTag(getCurrentTag())
+        var thread = if (loggerParams.withThread) {
+            loggerParams.threadFormatter!!.format(Thread.currentThread())
         } else {
             null
         }
-        var stackTrace = if (logConf.withStackTrace) {
-            logConf.stackTraceFormatter!!.format(
+        var stackTrace = if (loggerParams.withStackTrace) {
+            loggerParams.stackTraceFormatter!!.format(
                 StackTraceUtil.getCroppedRealStackTrack(
                     Throwable().stackTrace,
-                    logConf.stackTraceOrigin,
-                    logConf.stackTraceDepth
+                    loggerParams.stackTraceOrigin,
+                    loggerParams.stackTraceDepth
                 )
             )
         } else {
             null
         }
 
-        if (logConf.interceptors != null) {
+        if (loggerParams.interceptors != null) {
             var log = LogItem(logLvl, tag, thread, stackTrace, msg)
-            for (interceptor in logConf.interceptors!!) {
+            for (interceptor in loggerParams.interceptors!!) {
                 // if log is null, Log is eaten, don't print this log.
                 log = interceptor.intercept(log) ?: return
 
@@ -621,25 +513,29 @@ class Logger {
             msg = log.msg
         }
 
-        val finalMessage = if (logConf.withBorder) {
-            logConf.borderFormatter!!.format(arrayOf(thread, stackTrace, msg)) ?: ""
+        val finalMessage = if (loggerParams.withBorder) {
+            loggerParams.borderFormatter!!.format(arrayOf(thread, stackTrace, msg)) ?: ""
         } else {
             "${thread.safePlus()}${stackTrace.safePlus()}$msg"
         }
 
-        printer!!.println(logLvl, tag, finalMessage)
+        loggerParams.printer!!.println(logLvl, tag, finalMessage)
     }
 
     /**
      * Format a string with arguments.
      *
-     * @param format the format string, null if just to concat the arguments
+     * @param message the format string, null if just to concat the arguments
      * @param args   the arguments
      * @return the formatted string
      */
-    private fun formatArgs(format: String?, vararg args: Any): String {
-        if (format != null) {
-            return String.format(format, *args)
+    private fun formatArgs(message: String?, vararg args: Any): String {
+        if (message != null) {
+            return if (args.isEmpty()) {
+                message
+            } else {
+                String.format(message, *args)
+            }
         } else {
             val sb = StringBuilder()
             var i = 0
@@ -655,671 +551,60 @@ class Logger {
         }
     }
 
+    private val fqcnIgnore = setOf(
+        XLog::class.java.name,
+        Logger::class.java.name,
+        Builder::class.java.name,
+        ILogger::class.java.name,
+    )
+
+    private fun getDynamicTag(): String? {
+        return Throwable().stackTrace
+            .first { it.className !in fqcnIgnore }
+            .let(::createStackElementTag)
+    }
+
+    /**
+     * Extract the tag which should be used for the message from the `element`. By default
+     * this will use the class name without any anonymous class suffixes (e.g., `Foo$1`
+     * becomes `Foo`).
+     *
+     * Note: This will not be called if a [manual tag][.tag] was specified.
+     */
+    // 从堆栈跟踪元素中提取标签
+    fun createStackElementTag(element: StackTraceElement): String? {
+        // 获取类名的最后一部分作为标签
+        var tag = element.className.substringAfterLast('.')
+        // 使用正则表达式匹配匿名类后缀
+        val m = ANONYMOUS_CLASS.matcher(tag)
+        if (m.find()) {
+            // 若匹配到匿名类后缀，移除该后缀
+            tag = m.replaceAll("")
+        }
+        // Tag length limit was removed in API 26.
+        // 判断标签长度是否超过限制或系统版本是否高于 API 26
+        return tag
+    }
+
     /**
      * Builder for [Logger].
      */
-    class Builder {
-        /**
-         * The log level, the logs below of which would not be printed.
-         */
-        var logLevel: Int = 0
-
-        /**
-         * The tag string when [Logger] log.
-         */
-        var tag: String? = null
-
-        /**
-         * Whether we should log with thread info.
-         */
-        var withThread: Boolean = false
-
-        /**
-         * Whether we have enabled/disabled thread info.
-         */
-        var threadSet: Boolean = false
-
-        /**
-         * Whether we should log with stack trace.
-         */
-        var withStackTrace: Boolean = false
-
-        /**
-         * The origin of stack trace elements from which we should NOT log when logging with stack trace,
-         * it can be a package name like "com.logger.xlog", a class name like "com.yourdomain.logWrapper",
-         * or something else between package name and class name, like "com.yourdomain.".
-         *
-         *
-         * It is mostly used when you are using a logger wrapper.
-         */
-        var stackTraceOrigin: String? = null
-
-        /**
-         * The number of stack trace elements we should log when logging with stack trace,
-         * 0 if no limitation.
-         */
-        var stackTraceDepth: Int = 0
-
-        /**
-         * Whether we have enabled/disabled stack trace.
-         */
-        var stackTraceSet: Boolean = false
-
-        /**
-         * Whether we should log with border.
-         */
-        var withBorder: Boolean = false
-
-        /**
-         * Whether we have enabled/disabled border.
-         */
-        var borderSet: Boolean = false
-
-        /**
-         * The JSON formatter when [Logger] log a JSON string.
-         */
-        var jsonFormatter: JsonFormatter? = null
-
-        /**
-         * The XML formatter when [Logger] log a XML string.
-         */
-        var xmlFormatter: XmlFormatter? = null
-
-        /**
-         * The throwable formatter when [Logger] log a message with throwable.
-         */
-        var throwableFormatter: ThrowableFormatter? = null
-
-        /**
-         * The thread formatter when [Logger] logging.
-         */
-        var threadFormatter: ThreadFormatter? = null
-
-        /**
-         * The stack trace formatter when [Logger] logging.
-         */
-        var stackTraceFormatter: StackTraceFormatter? = null
-
-        /**
-         * The border formatter when [Logger] logging.
-         */
-        var borderFormatter: BorderFormatter? = null
-
-        /**
-         * The object formatters, used when [Logger] logging an object.
-         */
-        var objectFormatters: MutableMap<Class<*>, ObjectFormatter<*>>? = null
-
-        /**
-         * The intercepts, used when [Logger] logging.
-         */
-        var interceptors: MutableList<Interceptor>? = null
-
-        /**
-         * The printer used to print the log when [Logger] log.
-         */
-        var printer: Printer? = null
-
-        /**
-         * Construct a builder, which will perform the same as the global one by default.
-         */
-        init {
-            assertInitialization()
-        }
-
-        /**
-         * Set the log level, the logs below of which would not be printed.
-         *
-         * @param logLevel the log level
-         * @return the builder
-         * 
-         */
-        fun logLevel(logLevel: Int): Builder {
-            this.logLevel = logLevel
-            return this
-        }
-
-        /**
-         * Set the tag string when [Logger] log.
-         *
-         * @param tag the tag string when [Logger] log
-         * @return the builder
-         */
-        fun tag(tag: String?): Builder {
-            this.tag = tag
-            return this
-        }
-
-        /**
-         * Enable thread info, the thread info would be printed with the log message.
-         *
-         * @return the builder
-         * @see ThreadFormatter
-         *
-         * 
-         */
-        fun enableThreadInfo(): Builder {
-            this.withThread = true
-            this.threadSet = true
-            return this
-        }
-
-        /**
-         * Disable thread info, the thread info won't be printed with the log message.
-         *
-         * @return the builder
-         * 
-         */
-        fun disableThreadInfo(): Builder {
-            this.withThread = false
-            this.threadSet = true
-            return this
-        }
-
-        /**
-         * Enable stack trace, the stack trace would be printed with the log message.
-         *
-         * @param depth the number of stack trace elements we should log, 0 if no limitation
-         * @return the builder
-         * @see StackTraceFormatter
-         */
-        fun enableStackTrace(depth: Int): Builder {
-            this.withStackTrace = true
-            this.stackTraceDepth = depth
-            this.stackTraceSet = true
-            return this
-        }
-
-        /**
-         * Enable stack trace, the stack trace would be printed with the log message.
-         *
-         * @param stackTraceOrigin the origin of stack trace elements from which we should NOT log when
-         * logging with stack trace, it can be a package name like
-         * "com.logger.xlog", a class name like "com.yourdomain.logWrapper",
-         * or something else between package name and class name, like "com.yourdomain.".
-         * It is mostly used when you are using a logger wrapper
-         * @param depth            the number of stack trace elements we should log, 0 if no limitation
-         * @return the builder
-         * @see StackTraceFormatter
-         *
-         */
-        fun enableStackTrace(stackTraceOrigin: String?, depth: Int): Builder {
-            this.withStackTrace = true
-            this.stackTraceOrigin = stackTraceOrigin
-            this.stackTraceDepth = depth
-            this.stackTraceSet = true
-            return this
-        }
-
-        /**
-         * Disable stack trace, the stack trace won't be printed with the log message.
-         *
-         * @return the builder
-         * @see StackTraceFormatter
-         */
-        fun disableStackTrace(): Builder {
-            this.withStackTrace = false
-            this.stackTraceOrigin = null
-            this.stackTraceDepth = 0
-            this.stackTraceSet = true
-            return this
-        }
-
-        /**
-         * Enable border, the border would surround the entire log content, and separate the log
-         * message, thread info and stack trace.
-         *
-         * @return the builder
-         * @see BorderFormatter
-         *
-         */
-        fun enableBorder(): Builder {
-            this.withBorder = true
-            this.borderSet = true
-            return this
-        }
-
-
-        /**
-         * Disable border, the log content won't be surrounded by a border.
-         *
-         * @return the builder
-         */
-        fun disableBorder(): Builder {
-            this.withBorder = false
-            this.borderSet = true
-            return this
-        }
-
-        /**
-         * Set the JSON formatter when [Logger] log a JSON string.
-         *
-         * @param jsonFormatter the JSON formatter when [Logger] log a JSON string
-         * @return the builder
-         */
-        fun jsonFormatter(jsonFormatter: JsonFormatter?): Builder {
-            this.jsonFormatter = jsonFormatter
-            return this
-        }
-
-        /**
-         * Set the XML formatter when [Logger] log a XML string.
-         *
-         * @param xmlFormatter the XML formatter when [Logger] log a XML string
-         * @return the builder
-         */
-        fun xmlFormatter(xmlFormatter: XmlFormatter?): Builder {
-            this.xmlFormatter = xmlFormatter
-            return this
-        }
-
-        /**
-         * Set the throwable formatter when [Logger] log a message with throwable.
-         *
-         * @param throwableFormatter the throwable formatter when [Logger] log a message with
-         * throwable
-         * @return the builder
-         */
-        fun throwableFormatter(throwableFormatter: ThrowableFormatter?): Builder {
-            this.throwableFormatter = throwableFormatter
-            return this
-        }
-
-        /**
-         * Set the thread formatter when [Logger] logging.
-         *
-         * @param threadFormatter the thread formatter when [Logger] logging
-         * @return the builder
-         */
-        fun threadFormatter(threadFormatter: ThreadFormatter?): Builder {
-            this.threadFormatter = threadFormatter
-            return this
-        }
-
-        /**
-         * Set the stack trace formatter when [Logger] logging.
-         *
-         * @param stackTraceFormatter the stace trace formatter when [Logger] logging
-         * @return the builder
-         */
-        fun stackTraceFormatter(stackTraceFormatter: StackTraceFormatter?): Builder {
-            this.stackTraceFormatter = stackTraceFormatter
-            return this
-        }
-
-        /**
-         * Set the border formatter when [Logger] logging.
-         *
-         * @param borderFormatter the border formatter when [Logger] logging
-         * @return the builder
-         */
-        fun borderFormatter(borderFormatter: BorderFormatter?): Builder {
-            this.borderFormatter = borderFormatter
-            return this
-        }
-
-        /**
-         * Add an object formatter for specific class of object when [Logger] log an object.
-         *
-         * @param objectClass     the class of object
-         * @param objectFormatter the object formatter to add
-         * @param <T>             the type of object
-         * @return the builder
-         * 
-        </T> */
-        fun <T> addObjectFormatter(
-            objectClass: Class<T>, objectFormatter: ObjectFormatter<in T>
-        ): Builder {
-            if (objectFormatters == null) {
-                objectFormatters = builtinObjectFormatters()
-            }
-            objectFormatters!![objectClass] = objectFormatter
-            return this
-        }
-
-        /**
-         * Add an interceptor when [Logger] logging.
-         *
-         * @param interceptor the intercept to add
-         * @return the builder
-         * 
-         */
-        fun addInterceptor(interceptor: Interceptor): Builder {
-            if (interceptors == null) {
-                interceptors = mutableListOf()
-            }
-            interceptors!!.add(interceptor)
-            return this
-        }
-
-        /**
-         * Set the printers used to print the log when [Logger] log.
-         *
-         * @param printers the printers used to print the log when [Logger] log
-         * @return the builder
-         */
-        fun printers(vararg printers: Printer): Builder {
-            if (printers.isEmpty()) {
-                // Is there anybody want to reuse the Builder? It's not a good idea, but
-                // anyway, in case you want to reuse a builder and do not want the custom
-                // printers anymore, just do it.
-                this.printer = null
-            } else if (printers.size == 1) {
-                this.printer = printers[0]
-            } else {
-                this.printer = PrinterSet(*printers)
-            }
-            return this
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.v].
-         *
-         * 
-         */
-        fun v(obj: Any?) {
-            build().v(obj)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.v].
-         *
-         * 
-         */
-        fun v(array: Array<Any>) {
-            build().v(array)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.v].
-         */
-        fun v(format: String?, vararg args: Any) {
-            build().v(format, *args)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.v].
-         */
-        fun v(msg: String?) {
-            build().v(msg)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.v].
-         */
-        fun v(msg: String?, tr: Throwable) {
-            build().v(msg, tr)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.d].
-         *
-         * 
-         */
-        fun d(obj: Any?) {
-            build().d(obj)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.d].
-         *
-         * 
-         */
-        fun d(array: Array<Any>) {
-            build().d(array)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.d].
-         */
-        fun d(format: String?, vararg args: Any) {
-            build().d(format, *args)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.d].
-         */
-        fun d(msg: String?) {
-            build().d(msg)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.d].
-         */
-        fun d(msg: String?, tr: Throwable) {
-            build().d(msg, tr)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.i].
-         *
-         * 
-         */
-        fun i(obj: Any?) {
-            build().i(obj)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.i].
-         *
-         * 
-         */
-        fun i(array: Array<Any>) {
-            build().i(array)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.i].
-         */
-        fun i(format: String?, vararg args: Any) {
-            build().i(format, *args)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.i].
-         */
-        fun i(msg: String?) {
-            build().i(msg)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.i].
-         */
-        fun i(msg: String?, tr: Throwable) {
-            build().i(msg, tr)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.w].
-         *
-         * 
-         */
-        fun w(obj: Any?) {
-            build().w(obj)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.w].
-         *
-         * 
-         */
-        fun w(array: Array<Any>) {
-            build().w(array)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.w].
-         */
-        fun w(format: String?, vararg args: Any) {
-            build().w(format, *args)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.w].
-         */
-        fun w(msg: String?) {
-            build().w(msg)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.w].
-         */
-        fun w(msg: String?, tr: Throwable) {
-            build().w(msg, tr)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.e].
-         *
-         * 
-         */
-        fun e(obj: Any?) {
-            build().e(obj)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.e].
-         *
-         * 
-         */
-        fun e(array: Array<Any>) {
-            build().e(array)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.e].
-         */
-        fun e(format: String?, vararg args: Any) {
-            build().e(format, *args)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.e].
-         */
-        fun e(msg: String?) {
-            build().e(msg)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.e].
-         */
-        fun e(msg: String?, tr: Throwable) {
-            build().e(msg, tr)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.wtf].
-         *
-         *
-         */
-        fun wtf(obj: Any?) {
-            build().wtf(obj)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.wtf].
-         *
-         *
-         */
-        fun wtf(array: Array<Any>) {
-            build().wtf(array)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.wtf].
-         */
-        fun wtf(format: String?, vararg args: Any) {
-            build().wtf(format, *args)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.wtf].
-         */
-        fun wtf(msg: String?) {
-            build().wtf(msg)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.wtf].
-         */
-        fun wtf(msg: String?, tr: Throwable) {
-            build().wtf(msg, tr)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.log].
-         *
-         * 
-         */
-        fun log(logLevel: Int, obj: Any?) {
-            build().log(logLevel, obj)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.log].
-         *
-         * 
-         */
-        fun log(logLevel: Int, array: Array<Any>) {
-            build().log(logLevel, array)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.log].
-         *
-         * 
-         */
-        fun log(logLevel: Int, format: String?, vararg args: Any) {
-            build().log(logLevel, format, *args)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.log].
-         *
-         * 
-         */
-        fun log(logLevel: Int, msg: String?) {
-            build().log(logLevel, msg)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.log].
-         *
-         * 
-         */
-        fun log(logLevel: Int, msg: String?, tr: Throwable) {
-            build().log(logLevel, msg, tr)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.json].
-         */
-        fun json(json: String) {
-            build().json(json)
-        }
-
-        /**
-         * Convenience of [.build] and [Logger.xml].
-         */
-        fun xml(xml: String) {
-            build().xml(xml)
-        }
-
-        /**
-         * Builds configured [Logger] object.
-         *
-         * @return the built configured [Logger] object
-         */
+    class Builder(private val loggerConfig: LoggerConfig = LoggerConfig()) :
+        ILoggerConfig by loggerConfig {
         fun build(): Logger {
-            return Logger(this)
+            return Logger(loggerConfig)
         }
     }
 
-    private fun String?.safePlus(separator: String = SystemCompat.lineSeparator): String {
-        return if (this != null) {
-            "$this$separator"
-        } else {
-            ""
-        }
+    // 伴生对象，定义常量和静态成员
+    companion object {
+        // 定义日志消息的最大长度
+        private const val MAX_LOG_LENGTH = 4000
+
+        // 定义标签的最大长度
+        private const val MAX_TAG_LENGTH = 23
+
+        // 定义用于匹配匿名类后缀的正则表达式模式
+        private val ANONYMOUS_CLASS = Pattern.compile("(\\$\\d+)+$")
     }
 }

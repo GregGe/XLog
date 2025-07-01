@@ -7,6 +7,7 @@ import com.logger.xlog.LogLevel.INFO
 import com.logger.xlog.LogLevel.NONE
 import com.logger.xlog.LogLevel.VERBOSE
 import com.logger.xlog.LogLevel.WARN
+import com.logger.xlog.extensions.newConfig
 import com.logger.xlog.formatter.border.BorderFormatter
 import com.logger.xlog.formatter.message.json.JsonFormatter
 import com.logger.xlog.formatter.message.obj.ObjectFormatter
@@ -31,8 +32,7 @@ class XLogTest {
     fun setup() {
         XLogUtil.beforeTest()
         XLog.init(
-            LogConfiguration.Builder().logLevel(ALL).tag(DEFAULT_TAG).build(),
-            ContainerPrinter(logsContainer)
+            LoggerConfig().setLogLevel(ALL).setTag(DEFAULT_TAG), ContainerPrinter(logsContainer)
         )
     }
 
@@ -48,7 +48,7 @@ class XLogTest {
         assertLog(INFO, DEFAULT_TAG, MESSAGE)
 
         // Test WARN
-        var logger = XLog.logLevel(WARN).build()
+        var logger = XLog.newConfig { setLogLevel(WARN) }
         logsContainer.clear()
         logger.i(MESSAGE)
         AssertUtil.assertNoLog(logsContainer)
@@ -60,7 +60,7 @@ class XLogTest {
         assertLog(ERROR, DEFAULT_TAG, MESSAGE)
 
         // Test NONE
-        logger = XLog.logLevel(NONE).build()
+        logger = XLog.newConfig { setLogLevel(NONE) }
         logsContainer.clear()
         logger.log(-1, MESSAGE)
         logger.log(0, MESSAGE)
@@ -77,7 +77,7 @@ class XLogTest {
 
 
         // Test ALL
-        logger = XLog.logLevel(ALL).build()
+        logger = XLog.newConfig { setLogLevel(ALL) }
         logsContainer.clear()
         logger.log(-1, MESSAGE)
         assertLog(-1, DEFAULT_TAG, MESSAGE)
@@ -121,184 +121,196 @@ class XLogTest {
         logsContainer.clear()
         XLog.tag(CUSTOM_TAG).i(MESSAGE)
         assertLog(INFO, CUSTOM_TAG, MESSAGE)
+
+        XLog.dynamicTag = true
+        logsContainer.clear()
+        XLog.i(MESSAGE)
+        assertLog(INFO, this::class.java.simpleName, MESSAGE)
+        logsContainer.clear()
+        XLog.tag(CUSTOM_TAG).i(MESSAGE)
+        assertLog(INFO, CUSTOM_TAG, MESSAGE)
+        XLog.dynamicTag = false
     }
 
     @Test
     fun testThread() {
-        XLog.enableThreadInfo().i("Message with thread info")
-        var result = (logsContainer.size == 1
-                && logsContainer[0].msg!!.contains("Thread: "))
+        XLog.newConfig { enableThreadInfo() }.i("Message with thread info")
+        var result = (logsContainer.size == 1 && logsContainer[0].msg!!.contains("Thread: "))
         assertTrue("No thread info found", result)
 
         logsContainer.clear()
-        XLog.disableThreadInfo().i("Message without thread info")
-        result = (logsContainer.size == 1
-                && !logsContainer[0].msg!!.contains("Thread: "))
+        XLog.newConfig { disableThreadInfo() }.i("Message without thread info")
+        result = (logsContainer.size == 1 && !logsContainer[0].msg!!.contains("Thread: "))
         assertTrue("Thread info found", result)
     }
 
     @Test
     fun testStackTrace() {
-        XLog.enableStackTrace(1).i("Message with stack trace, depth 1")
-        var result = (logsContainer.size == 1
-                && logsContainer[0].msg!!.contains("\t─ "))
+        XLog.newConfig { enableStackTrace(1) }.i("Message with stack trace, depth 1")
+        var result = (logsContainer.size == 1 && logsContainer[0].msg!!.contains("\t─ "))
         assertTrue("No stack trace found", result)
 
         logsContainer.clear()
-        XLog.enableStackTrace(2).i("Message with stack trace, depth 2")
-        result = (logsContainer.size == 1
-                && logsContainer[0].msg!!.contains("\t├ "))
+        XLog.newConfig { enableStackTrace(2) }.i("Message with stack trace, depth 2")
+        result = (logsContainer.size == 1 && logsContainer[0].msg!!.contains("\t├ "))
         assertTrue("No stack trace found", result)
 
         logsContainer.clear()
-        XLog.disableStackTrace().i("Message without stack trace")
-        result = (logsContainer.size == 1
-                && !logsContainer[0].msg!!.contains("\t├ "))
+        XLog.newConfig { disableStackTrace() }.i("Message without stack trace")
+        result = (logsContainer.size == 1 && !logsContainer[0].msg!!.contains("\t├ "))
         assertTrue("Stack trace found", result)
     }
 
     @Test
     fun testBorder() {
-        XLog.enableBorder().i("Message with a border")
-        var result = (logsContainer.size == 1 &&
-                logsContainer[0].msg!!.trimIndent().startsWith("╔═══") &&
-                logsContainer[0].msg!!.endsWith("════"))
+        XLog.newConfig { enableBorder() }.i("Message with a border")
+        var result = (logsContainer.size == 1 && logsContainer[0].msg!!.trimIndent()
+            .startsWith("╔═══") && logsContainer[0].msg!!.endsWith("════"))
         assertTrue("No bordered log found", result)
 
         logsContainer.clear()
-        XLog.disableBorder().i("Message without a border")
-        result = (logsContainer.size == 1 && !logsContainer[0].msg!!.startsWith("╔═══")
-                && !logsContainer[0].msg!!.endsWith("════"))
+        XLog.newConfig { disableBorder() }.i("Message without a border")
+        result =
+            (logsContainer.size == 1 && !logsContainer[0].msg!!.startsWith("╔═══") && !logsContainer[0].msg!!.endsWith(
+                "════"
+            ))
         assertTrue("Bordered log found", result)
     }
 
     @Test
     fun testObject() {
         val date = Date()
-        XLog.addObjectFormatter(Date::class.java, object : ObjectFormatter<Date> {
-            override fun format(data: Date): String {
-                return data.time.toString()
-            }
-        }).i(date)
-        val result = (logsContainer.size == 1
-                && logsContainer[0].msg == date.time.toString())
+        XLog.newConfig {
+            addObjectFormatter(Date::class.java, object : ObjectFormatter<Date> {
+                override fun format(data: Date): String {
+                    return data.time.toString()
+                }
+            })
+        }.i(date)
+        val result = (logsContainer.size == 1 && logsContainer[0].msg == date.time.toString())
         assertTrue("Formatted object log not found", result)
     }
 
     @Test
     fun testModifyingInterceptor() {
-        XLog.addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem? {
-                log.tag = CUSTOM_TAG
-                return log
-            }
-        }).addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem? {
-                log.msg = log.msg + "[i1]"
-                return log
-            }
-        }).addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem? {
-                log.msg = log.msg + "[i2]"
-                return log
-            }
-        }).addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem? {
-                log.level = DEBUG
-                return log
-            }
-        }).i(MESSAGE)
+        XLog.newConfig {
+            addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem? {
+                    log.tag = CUSTOM_TAG
+                    return log
+                }
+            }).addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem? {
+                    log.msg = log.msg + "[i1]"
+                    return log
+                }
+            }).addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem? {
+                    log.msg = log.msg + "[i2]"
+                    return log
+                }
+            }).addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem? {
+                    log.level = DEBUG
+                    return log
+                }
+            })
+        }.i(MESSAGE)
         assertLog(DEBUG, CUSTOM_TAG, MESSAGE + "[i1][i2]")
     }
 
     @Test
     fun testReplacingInterceptor() {
-        XLog.addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem {
-                return LogItem(VERBOSE, "tag1", "msg1")
-            }
-        }).addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem {
-                return LogItem(DEBUG, "tag2", "msg2")
-            }
-        }).i(MESSAGE)
+        XLog.newConfig {
+            addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem {
+                    return LogItem(VERBOSE, "tag1", "msg1")
+                }
+            }).addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem {
+                    return LogItem(DEBUG, "tag2", "msg2")
+                }
+            })
+        }.i(MESSAGE)
         assertLog(DEBUG, "tag2", "msg2")
     }
 
     @Test
     fun testBlockingInterceptor() {
-        XLog.addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem? {
-                log.msg = "i1"
-                return log
-            }
-        }).addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem? {
-                // Block the log.
-                return null
-            }
-        }).addInterceptor(object : Interceptor {
-            override fun intercept(log: LogItem): LogItem? {
-                log.msg = "i2"
-                return log
-            }
-        }).i(MESSAGE)
+        XLog.newConfig {
+            addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem? {
+                    log.msg = "i1"
+                    return log
+                }
+            }).addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem? {
+                    // Block the log.
+                    return null
+                }
+            }).addInterceptor(object : Interceptor {
+                override fun intercept(log: LogItem): LogItem? {
+                    log.msg = "i2"
+                    return log
+                }
+            })
+        }.i(MESSAGE)
         AssertUtil.assertNoLog(logsContainer)
     }
 
     @Test
     fun testCustomJsonFormatter() {
-        XLog.jsonFormatter(
-            object : JsonFormatter {
+        XLog.newConfig {
+            jsonFormatter(object : JsonFormatter {
                 override fun format(data: String?): String {
                     return "This is a json string: $data"
                 }
             })
-            .json("{name=xlog}")
+        }.json("{name=xlog}")
         assertLog(DEBUG, DEFAULT_TAG, "This is a json string: {name=xlog}")
     }
 
     @Test
     fun testCustomXmlFormatter() {
-        XLog.xmlFormatter(
-            object : XmlFormatter {
+        XLog.newConfig {
+            xmlFormatter(object : XmlFormatter {
                 override fun format(data: String?): String {
                     return "This is a xml string: $data"
                 }
             })
-            .xml("<note name=\"xlog\">")
+        }.xml("<note name=\"xlog\">")
         assertLog(DEBUG, DEFAULT_TAG, "This is a xml string: <note name=\"xlog\">")
     }
 
     @Test
     fun testCustomThrowableFormatter() {
         val formattedThrowable = "This is a throwable"
-        XLog.throwableFormatter(
-            object : ThrowableFormatter {
+        XLog.newConfig {
+            throwableFormatter(object : ThrowableFormatter {
                 override fun format(data: Throwable?): String {
                     return formattedThrowable
                 }
             })
-            .i(MESSAGE, Throwable())
+        }.i(MESSAGE, Throwable())
         assertLog(
             INFO, DEFAULT_TAG, """
-     $MESSAGE
-     $formattedThrowable
-     """.trimIndent()
+             $MESSAGE
+             $formattedThrowable
+             """.trimIndent()
         )
     }
 
     @Test
     fun testCustomThreadFormatter() {
         val formattedThread = "This is the thread info"
-        XLog.threadFormatter(
-            object : ThreadFormatter {
+        XLog.newConfig {
+            threadFormatter(object : ThreadFormatter {
                 override fun format(data: Thread?): String {
                     return formattedThread
                 }
             })
-            .enableThreadInfo()
-            .i(MESSAGE)
+            enableThreadInfo()
+        }.i(MESSAGE)
         assertLog(
             INFO, DEFAULT_TAG, """
      $formattedThread
@@ -310,14 +322,13 @@ class XLogTest {
     @Test
     fun testCustomStackTraceFormatter() {
         val formattedStackTrace = "This is the stack trace"
-        XLog.stackTraceFormatter(
-            object : StackTraceFormatter {
+        XLog.newConfig {
+            stackTraceFormatter(object : StackTraceFormatter {
                 override fun format(data: Array<StackTraceElement?>?): String {
                     return formattedStackTrace
                 }
-            })
-            .enableStackTrace(1)
-            .i(MESSAGE)
+            }).enableStackTrace(1)
+        }.i(MESSAGE)
         assertLog(
             INFO, DEFAULT_TAG, """
      $formattedStackTrace
@@ -328,15 +339,17 @@ class XLogTest {
 
     @Test
     fun testCustomBorderFormatter() {
-        XLog.enableThreadInfo().threadFormatter(object : ThreadFormatter {
-            override fun format(data: Thread?): String {
-                return "T1"
-            }
-        }).enableBorder().borderFormatter(object : BorderFormatter {
-            override fun format(segments: Array<String?>?): String {
-                return addCustomBorder(segments)
-            }
-        }).i(MESSAGE)
+        XLog.newConfig {
+            enableThreadInfo().threadFormatter(object : ThreadFormatter {
+                override fun format(data: Thread?): String {
+                    return "T1"
+                }
+            }).enableBorder().borderFormatter(object : BorderFormatter {
+                override fun format(segments: Array<String?>?): String {
+                    return addCustomBorder(segments)
+                }
+            })
+        }.i(MESSAGE)
         assertLog(INFO, DEFAULT_TAG, addCustomBorder(arrayOf("T1", MESSAGE)))
     }
 
@@ -371,14 +384,14 @@ class XLogTest {
 
     @Test
     fun testCustomPrinter() {
-        XLog.printers(
-            object : ContainerPrinter(logsContainer) {
+        XLog.newConfig {
+            printers(object : ContainerPrinter(logsContainer) {
                 override fun onPrint(logItem: LogItem): LogItem {
                     logItem.msg = CUSTOM_PRINTER_MSG_PREFIX + logItem.msg
                     return logItem
                 }
             })
-            .i(MESSAGE)
+        }.i(MESSAGE)
         assertLog(INFO, DEFAULT_TAG, CUSTOM_PRINTER_MSG_PREFIX + MESSAGE)
     }
 
@@ -396,8 +409,7 @@ class XLogTest {
         private const val CUSTOM_PRINTER_MSG_PREFIX = "message from custom printer - "
     }
 
-    open class ContainerPrinter(logsContainer: MutableList<LogItem>) :
-        Printer {
+    open class ContainerPrinter(logsContainer: MutableList<LogItem>) : Printer {
         private var logsContainers: MutableList<LogItem> = ArrayList()
 
         init {
@@ -417,5 +429,4 @@ class XLogTest {
             logsContainers.add(log)
         }
     }
-
 }

@@ -7,7 +7,7 @@ import com.logger.xlog.internal.util.StackTraceUtil
  * in a single line.
  */
 class DefaultThrowableFormatter : ThrowableFormatter {
-    override fun format(data: Throwable?): String {
+    override fun format(data: Throwable): String {
         return StackTraceUtil.getStackTraceString(data)
     }
 }

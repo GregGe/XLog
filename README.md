@@ -1,4 +1,5 @@
 # XLog
+声明：借鉴和使用了 [XLog](https://github.com/elvishew/xLog/) 的思想和部分代码，使用 Kotlin 重写、修改和优化，并且添加了更多功能。
 
 轻量、美观强大、可扩展的 Android 和 Java 日志库，可同时将日志打印在如 Logcat、Console 和文件中。如果你愿意，你可以将日志打印到任何地方。
 
@@ -9,18 +10,12 @@
 依赖
 
 ```groovy
-implementation 'com.logger:xlog:1.0.0'
-```
-log
-初始化
-
-```java
-XLog.init(LogLevel.ALL);
+implementation 'io.github.gregge:xlog:0.0.3'
 ```
 
 打印日志
 
-```java
+```kotlin
 XLog.d("你好 xlog");
 ```
 
@@ -28,32 +23,32 @@ XLog.d("你好 xlog");
 
 打印简单消息。
 
-```java
+```kotlin
 XLog.d(message);
 ```
 
 打印带 `throwable` 的消息，通常用于有异常被抛出时。
 
-```java
+```kotlin
 XLog.e(message, throwable);
 ```
 
 支持格式化字符串，这样你就不需要去使用 `+` 拼接一大串的字符串和变量。
 
-```java
+```kotlin
 XLog.d("你好%s，我今年 %d 岁", "Elvis", 20);
 ```
 
 未格式化的 JSON 和 XML 字符串会被自动格式化。
 
-```java
+```kotlin
 XLog.json(JSON_CONTENT);
 XLog.xml(XML_CONTENT);
 ```
 
 支持所有的 `Collection` 和 `Map` 类型的数据。
 
-```java
+```kotlin
 XLog.d(array);
 XLog.d(list);
 XLog.d(map);
@@ -61,14 +56,14 @@ XLog.d(map);
 
 如需要，你也可以直接打印 `Intent` 和 `Bundle` 对象。
 
-```java
+```kotlin
 XLog.d(intent);
 XLog.d(bundle);
 ```
 
 事实上，你可以打印任何类型的对象。你甚至可以为不同类型指定不同的 `ObjectFormatter`，如不指定，在对象转换为字符串时，会直接调用对象类型的 `toString()`。
 
-```java
+```kotlin
 XLog.d(object);
 ```
 
@@ -80,49 +75,55 @@ XLog.d(object);
 
 当初始化时，可以用最简单的方式，
 
-```java
+```kotlin
 XLog.init(LogLevel.ALL);
 ```
 
 也可以用高级的方式。
 
-```java
-LogConfiguration config = new LogConfiguration.Builder()
-    .logLevel(BuildConfig.DEBUG ? LogLevel.ALL             // 指定日志级别，低于该级别的日志将不会被打印，默认为 LogLevel.ALL
-        : LogLevel.NONE)
-    .tag("MY_TAG")                                         // 指定 TAG，默认为 "X-LOG"
-    .enableThreadInfo()                                    // 允许打印线程信息，默认禁止
-    .enableStackTrace(2)                                   // 允许打印深度为 2 的调用栈信息，默认禁止
-    .enableBorder()                                        // 允许打印日志边框，默认禁止
-    .jsonFormatter(new MyJsonFormatter())                  // 指定 JSON 格式化器，默认为 DefaultJsonFormatter
-    .xmlFormatter(new MyXmlFormatter())                    // 指定 XML 格式化器，默认为 DefaultXmlFormatter
-    .throwableFormatter(new MyThrowableFormatter())        // 指定可抛出异常格式化器，默认为 DefaultThrowableFormatter
-    .threadFormatter(new MyThreadFormatter())              // 指定线程信息格式化器，默认为 DefaultThreadFormatter
-    .stackTraceFormatter(new MyStackTraceFormatter())      // 指定调用栈信息格式化器，默认为 DefaultStackTraceFormatter
-    .borderFormatter(new MyBoardFormatter())               // 指定边框格式化器，默认为 DefaultBorderFormatter
-    .addObjectFormatter(AnyClass.class,                    // 为指定类型添加对象格式化器
-        new AnyClassObjectFormatter())                     // 默认使用 Object.toString()
-    .addInterceptor(new BlacklistTagsFilterInterceptor(    // 添加黑名单 TAG 过滤器
-        "blacklist1", "blacklist2", "blacklist3"))
-    .addInterceptor(new MyInterceptor())                   // 添加一个日志拦截器
-    .build();
-
-Printer androidPrinter = new AndroidPrinter(true);         // 通过 android.util.Log 打印日志的打印器
-Printer consolePrinter = new ConsolePrinter();             // 通过 System.out 打印日志到控制台的打印器
-Printer filePrinter = new FilePrinter                      // 打印日志到文件的打印器
-    .Builder("<日志目录全路径>")                             // 指定保存日志文件的路径
-    .fileNameGenerator(new DateFileNameGenerator())        // 指定日志文件名生成器，默认为 ChangelessFileNameGenerator("log")
-    .backupStrategy(new NeverBackupStrategy())             // 指定日志文件备份策略，默认为 FileSizeBackupStrategy(1024 * 1024)
-    .cleanStrategy(new FileLastModifiedCleanStrategy(MAX_TIME))     // 指定日志文件清除策略，默认为 NeverCleanStrategy()
-    .flattener(new MyFlattener())                          // 指定日志平铺器，默认为 DefaultFlattener
-    .writer(new MyWriter())                                // 指定日志写入器，默认为 SimpleWriter
-    .build();
-
-XLog.init(                                                 // 初始化 XLog
-    config,                                                // 指定日志配置，如果不指定，会默认使用 new LogConfiguration.Builder().build()
-    androidPrinter,                                        // 添加任意多的打印器。如果没有添加任何打印器，会默认使用 AndroidPrinter(Android)/ConsolePrinter(java)
-    consolePrinter,
-    filePrinter);
+```kotlin
+val config = XLog.createNewConfig()
+    .setLogLevel(                                       // 指定日志级别，低于该级别的日志将不会被打印，默认为 LogLevel.ALL
+        if (BuildConfig.DEBUG) {
+            LogLevel.ALL
+        } else {
+            LogLevel.WARN
+        }
+    )
+    .setTag("MY_TAG")                                    // 指定 TAG，默认为 "XLog"
+    .enableThreadInfo()                                  // 允许打印线程信息，默认禁止
+    .enableStackTrace(2)                                 // 允许打印深度为 2 的调用栈信息，默认禁止
+    .enableBorder()                                      // 允许打印日志边框，默认禁止
+    .jsonFormatter(YourJsonFormatter())                  // 指定 JSON 格式化器，默认为 DefaultJsonFormatter
+    .xmlFormatter(YourXmlFormatter())                    // 指定 XML 格式化器，默认为 DefaultXmlFormatter
+    .throwableFormatter(YourThrowableFormatter())        // 指定可抛出异常格式化器，默认为 DefaultThrowableFormatter
+    .threadFormatter(YourThreadFormatter())              // 指定线程信息格式化器，默认为 DefaultThreadFormatter
+    .stackTraceFormatter(YourStackTraceFormatter())      // 指定调用栈信息格式化器，默认为 DefaultStackTraceFormatter
+    .borderFormatter(YourBoardFormatter())               // 指定边框格式化器，默认为 DefaultBorderFormatter
+    .addObjectFormatter(AnyClass.class,                  // 为指定类型添加对象格式化器
+            YourAnyClassObjectFormatter()                // 默认使用 Object.toString()
+    )               
+    .addInterceptor(
+        BlacklistTagsFilterInterceptor(                  // 添加黑名单 TAG 过滤器
+            "blacklist1", "blacklist2", "blacklist3"
+        )
+    )
+    .addInterceptor(YourInterceptor())                   // 添加一个日志拦截器
+val androidPrinter = AndroidPrinter(true);               // 通过 android.util.Log 打印日志的打印器
+val consolePrinter = ConsolePrinter();                   // 通过 System.out 打印日志到控制台的打印器
+val filePrinter = FilePrinter                            // 打印日志到文件的打印器
+    .Builder("<日志目录全路径>")                           // 指定保存日志文件的路径
+    .fileNameGenerator(DateFileNameGenerator())          // 指定日志文件名生成器，默认为 ChangelessFileNameGenerator("log")
+    .backupStrategy(NeverBackupStrategy())               // 指定日志文件备份策略，默认为 FileSizeBackupStrategy(1024 * 1024)
+    .cleanStrategy(FileLastModifiedCleanStrategy(MAX_TIME))     // 指定日志文件清除策略，默认为 NeverCleanStrategy()
+    .flattener(MyFlattener())                            // 指定日志平铺器，默认为 DefaultFlattener
+    .writer(MyWriter())                                  // 指定日志写入器，默认为 SimpleWriter
+    .build()
+XLog.init(                                               // 初始化 XLog
+    config,                                              // 指定日志配置，如果不指定，会默认使用 new LogConfiguration.Builder().build()
+    androidPrinter,     // 添加任意多的打印器。如果没有添加任何打印器，会默认使用 AndroidPrinter(Android)/ConsolePrinter(java)
+    consolePrinter
+)
 ```
 
 初始化后，一个拥有全局配置的全局 `Logger` 将被创建，所有对 `XLog` 的打印函数的调用都会被传递到这个全局 `Logger` 来进行打印。
@@ -131,35 +132,49 @@ XLog.init(                                                 // 初始化 XLog
 
 * 基于全局 `Logger`将 TAG 改为 `"TAG-A"`。
 
-```java
-Logger logger = XLog.tag("TAG-A")
-                    ... // 其他配置的覆盖
-                    .build();
+```kotlin
+val logger = logger.cloneConfig {  
+    setTag("TAG-A")
+    // 其他配置
+}
 logger.d("定制了 TAG 的消息");
+// logger.updateConfig 更新配置，使用原 Logger 实例
+// logger.cloneConfig  克隆配置，创建新 Logger 实例
+// logger.newConfig    初始化新配置，默认继承 tag 和 level，创建新 Logger 实例
 ```
 
-* 基于全局 `Logger`，允许打印日志边框和线程信息。
+* 使用全局 `Logger`，允许打印日志边框和线程信息。
 
-```java
-Logger logger = XLog.enableBorder()
-                    .enableThread()
-                    ... // 其他配置的覆盖
-                    .build();
+```kotlin
+val logger = XLog.updateConfig {
+    enableBorder()
+    enableThreadInfo()
+    ... // 其他配置的覆盖
+}
 logger.d("带有线程信息和日志边框的消息");
 ```
 
 你还可以使用一次性配置来打印日志。
 
-```java
-XLog.tag("TAG-A").d("定制了 TAG 的消息");
-XLog.enableBorder().enableThread().d("带有线程信息和日志边框的消息");
+```kotlin
+XLog.tag("TAG-A").d("定制了 TAG 的消息");  // 临时tag，一次使用后失效
+
+XLog.dynamicTag = true;  // 开启动态tag，每次调用都会生成新的 tag
+XLog.dynamicTag {   // 动态tag，作用域内有效
+    d("定制了 TAG 的消息");
+}
+
+// 新建Logger 实例
+XLog.newConfig {
+    enableBorder().enableThreadInfo()
+}.d("带有线程信息和日志边框的消息");
 ```
 
 ## 打印到任何地方
 
 只需一句调用
 
-```java
+```kotlin
 XLog.d("你好 xlog");
 ```
 你就可以将 `"你好 xlog"` 打印到
@@ -172,68 +187,48 @@ XLog.d("你好 xlog");
 
 打印到其他地方，你只需自己实现个 `Printer` 接口，并在初始化过程中指定它
 
-```java
+```kotlin
 XLog.init(config, printer1, printer2...printerN);
 ```
 
 或者在创建非全局 `Logger` 时指定它
 
-```java
-Logger logger = XLog.printer(printer1, printer2...printerN)
-                    .build();
-```
+```kotlin
+val logger = XLog.newConfig {
+    printers(printer1, printer2...printerN)
+}
 
-或者在一次性打印时指定它
-
-```java
-XLog.printer(printer1, printer2...printerN).d("用一次性配置打印的消息");
+val logger = XLog.createNewLogger().apply {
+    printers(printer1, printer2...printerN)
+ }
 ```
 
 ## 保存日志到文件
 
 要保存日志到文件，你需要创建一个 `FilePrinter`
 
-```java
-Printer filePrinter = new FilePrinter                      // 打印日志到文件的打印器
-    .Builder("<日志目录全路径>")                             // 指定保存日志文件的路径
-    .fileNameGenerator(new DateFileNameGenerator())        // 指定日志文件名生成器，默认为 ChangelessFileNameGenerator("log")
-    .backupStrategy(new NeverBackupStrategy())             // 指定日志文件备份策略，默认为 FileSizeBackupStrategy(1024 * 1024)
-    .cleanStrategy(new FileLastModifiedCleanStrategy(MAX_TIME))     // 指定日志文件清除策略，默认为 NeverCleanStrategy()
-    .flattener(new MyFlattener())                          // 指定日志平铺器，默认为 DefaultFlattener
-    .build();
+```kotlin
+val filePrinter: Printer = FilePrinter.Builder("<日志目录全路径>") // 指定保存日志文件的路径
+    .fileNameGenerator(DateFileNameGenerator()) // 指定日志文件名生成器，默认为 ChangelessFileNameGenerator("log")
+    .backupStrategy(NeverBackupStrategy()) // 指定日志文件备份策略，默认为 FileSizeBackupStrategy(1024 * 1024)
+    .cleanStrategy(FileLastModifiedCleanStrategy(MAX_TIME)) // 指定日志文件清除策略，默认为 NeverCleanStrategy()
+    .flattener(MyFlattener()) // 指定日志平铺器，默认为 DefaultFlattener
+    .build()
 ```
 
 并在初始化时添加它
 
-```java
+```kotlin
 XLog.init(config, filePrinter);
 ```
 
 或者在创建非全局 `Logger` 时添加它
 
-```java
-Logger logger = XLog.printer(filePrinter)
-                    ... // other overrides
-                    .build();
+```kotlin
+val logger = XLog.newConfig {
+    printers(filePrinter)
+}
 ```
-
-或者在一次性打印时添加它
-
-```java
-XLog.printer(filePrinter).d("用一次性配置打印的消息");
-```
-
-### 保存第三方库打印的日志到文件
-
-你可以在初始化 `XLog` 后配置 `LibCat`。
-
-```java
-LibCat.config(true, filePrinter);
-```
-
-然后，由第三方库/模块（在同一个 app 里）打印的日志也将会被保存到文件中。
-
-点击 [LibCat] 了解更多细节。
 
 ### 自定义日志文件名
 
@@ -344,7 +339,7 @@ LibCat.config(true, filePrinter);
 
 仅需调用
 
-```java
+```kotlin
 LogUtil.compress("<日志目录全路径>", "<要保存的压缩文件全路径>");
 ```
 
@@ -364,7 +359,7 @@ LogUtil.compress("<日志目录全路径>", "<要保存的压缩文件全路径>
 
 当我们直接打印对象时
 
-```java
+```kotlin
 XLog.d(object);
 ```
 
@@ -382,6 +377,7 @@ XLog.d(object);
 
 * [logger](https://github.com/orhanobut/logger)
 * [KLog](https://github.com/ZhaoKaiQiang/KLog)
+* [XLog](https://github.com/elvishew/XLog)
 
 与其他日志库对比：
 
@@ -390,57 +386,9 @@ XLog.d(object);
 
 ## 兼容性
 
-为了与 [Android Log] 兼容，xLog 支持 [Android Log] 的所有方法。
+为了与 [Android Log] 兼容，XLog 支持 [Android Log] 的所有方法。
 
-请看 [XLog] 中定义的 `Log` 类.
-
-```java
-Log.v(String, String);
-Log.v(String, String, Throwable);
-Log.d(String, String);
-Log.d(String, String, Throwable);
-Log.i(String, String);
-Log.i(String, String, Throwable);
-Log.w(String, String);
-Log.w(String, String, Throwable);
-Log.wtf(String, String);
-Log.wtf(String, String, Throwable);
-Log.e(String, String);
-Log.e(String, String, Throwable);
-Log.println(int, String, String);
-Log.isLoggable(String, int);
-Log.getStackTraceString(Throwable);
-```
-
-### 迁移
-
-如果你有一个大型项目正在使用 [Android Log], 并且很难将所有对 [Android Log] 的使用都换成 [XLog]，那么你可以使用兼容 API，简单地把所有 'android.util.Log' 替换成 'com.elvishew.xlog.XLog.Log'。
-(**为了更好的性能，尽量不要使用兼容 API。**)
-
-#### Linux/Cygwin
-
-```shell
-grep -rl "android.util.Log" <your-source-directory> | xargs sed -i "s/android.util.Log/com.elvishew.xlog.XLog.Log/g"
-```
-
-#### Mac
-
-```shell
-grep -rl "android.util.Log" <your-source-directory> | xargs sed -i "" "s/android.util.Log/com.elvishew.xlog.XLog.Log/g"
-```
-
-#### Android Studio
-
-1. 在 'Project' 窗口中，切换到 'Project Files' 标签，然后右键点击你的源码目录。
-2. 在出现的菜单中，点击 'Replace in Path...' 选项。
-3. 在弹出的对话框中，在 'Text to find' 区域填上 'android.util.Log'，'Replace with' 区域填上 'com.elvishew.xlog.XLog.Log' 然后点击 'Find'。
-
-相比替换掉所有 'android.util.Log'，还有另一种方式。你可以使用 [LibCat] 拦截所有通过 `android.util.Log` 打印的日志，将他们重定向到 `XLog` 的 `Printer`。
-
-## [Issues](https://github.com/elvishew/xLog/issues)
-
-如果你在使用过程中遇到任何问题或者有任何建议，请创建一个 Issue。
-在创建 Issue 前，请检查类似 Issue 是否已经存在.
+可查看 [ILogger.kt](xlog/src/main/java/com/logger/xlog/ILogger.kt) 的接口定义。
 
 ## License
 

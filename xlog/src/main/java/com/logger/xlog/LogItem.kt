@@ -18,7 +18,7 @@ class LogItem {
      * The tag, should not be null.
      */
     @JvmField
-    var tag: String
+    var tag: String?
 
     /**
      * The formatted message, should not be null.
@@ -29,16 +29,16 @@ class LogItem {
     /**
      * The formatted thread info, null if thread info is disabled.
      *
-     * @see LogConfiguration.Builder.enableThreadInfo
-     * @see LogConfiguration.Builder.disableThreadInfo
+     * @see ILoggerConfig.enableThreadInfo
+     * @see ILoggerConfig.disableThreadInfo
      */
     var threadInfo: String? = null
 
     /**
      * The formatted stack trace info, null if stack trace info is disabled.
      *
-     * @see LogConfiguration.Builder.enableStackTrace
-     * @see LogConfiguration.Builder.disableStackTrace
+     * @see ILoggerConfig.enableStackTrace
+     * @see ILoggerConfig.disableStackTrace
      */
     var stackTraceInfo: String? = null
 

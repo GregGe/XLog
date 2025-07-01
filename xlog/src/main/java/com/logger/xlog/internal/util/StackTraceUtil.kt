@@ -23,14 +23,10 @@ object StackTraceUtil {
      *
      * @param tr An exception to log
      */
-    fun getStackTraceString(tr: Throwable?): String {
-        if (tr == null) {
-            return ""
-        }
-
+    fun getStackTraceString(tr: Throwable): String {
         // This is to reduce the amount of log spew that apps do in the non-error
         // condition of the network being unavailable.
-        var t = tr
+        var t: Throwable? = tr
         while (t != null) {
             if (t is UnknownHostException) {
                 return ""

@@ -1,6 +1,5 @@
 package com.logger.xlog
 
-import com.logger.xlog.XLog.assertInitialization
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
 import java.io.File
@@ -13,10 +12,11 @@ import java.util.zip.ZipOutputStream
 /**
  * Utilities for convenience.
  *
- * 
+ *
  */
 object LogUtils {
     private const val BUFFER_SIZE = 8 * 1024 // 8K
+
     /**
      * Format a JSON string using default JSON formatter.
      *
@@ -24,8 +24,7 @@ object LogUtils {
      * @return the formatted string
      */
     fun formatJson(json: String): String? {
-        assertInitialization()
-        return XLog.sLogConfiguration.jsonFormatter!!.format(json)
+        return XLog.loggerParams.jsonFormatter?.format(json)
     }
 
     /**
@@ -35,8 +34,7 @@ object LogUtils {
      * @return the formatted string
      */
     fun formatXml(xml: String): String? {
-        assertInitialization()
-        return XLog.sLogConfiguration.xmlFormatter!!.format(xml)
+        return XLog.loggerParams.xmlFormatter?.format(xml)
     }
 
     /**
@@ -46,8 +44,7 @@ object LogUtils {
      * @return the formatted string
      */
     fun formatThrowable(throwable: Throwable): String? {
-        assertInitialization()
-        return XLog.sLogConfiguration.throwableFormatter!!.format(throwable)
+        return XLog.loggerParams.throwableFormatter?.format(throwable)
     }
 
     /**
@@ -57,8 +54,7 @@ object LogUtils {
      * @return the formatted string
      */
     fun formatThread(thread: Thread): String? {
-        assertInitialization()
-        return XLog.sLogConfiguration.threadFormatter!!.format(thread)
+        return XLog.loggerParams.threadFormatter?.format(thread)
     }
 
     /**
@@ -68,8 +64,7 @@ object LogUtils {
      * @return the formatted string
      */
     fun formatStackTrace(stackTrace: Array<StackTraceElement?>?): String? {
-        assertInitialization()
-        return XLog.sLogConfiguration.stackTraceFormatter!!.format(stackTrace)
+        return XLog.loggerParams.stackTraceFormatter?.format(stackTrace)
     }
 
     /**
@@ -79,8 +74,7 @@ object LogUtils {
      * @return the bordered string segments
      */
     fun addBorder(segments: Array<String?>): String? {
-        assertInitialization()
-        return XLog.sLogConfiguration.borderFormatter!!.format(segments)
+        return XLog.loggerParams.borderFormatter?.format(segments)
     }
 
     /**
@@ -92,7 +86,7 @@ object LogUtils {
      * @param folderPath  the specific folder path
      * @param zipFilePath the zip file path
      * @throws IOException if any error occurs
-     * 
+     *
      */
     @Throws(IOException::class)
     fun compress(folderPath: String, zipFilePath: String) {

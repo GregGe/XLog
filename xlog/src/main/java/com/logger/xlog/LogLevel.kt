@@ -75,8 +75,7 @@ object LogLevel {
      *
      *
      * The returned name may be<br></br>
-     * Level less than [LogLevel.VERBOSE]: "VERBOSE-N", N means levels below
-     * [LogLevel.VERBOSE]<br></br>
+     * Level less than [LogLevel.VERBOSE]: "VERBOSE-N", N means levels below [LogLevel.VERBOSE] <br></br>
      * [LogLevel.VERBOSE]: "VERBOSE"<br></br>
      * [LogLevel.DEBUG]: "DEBUG"<br></br>
      * [LogLevel.INFO]: "INFO"<br></br>

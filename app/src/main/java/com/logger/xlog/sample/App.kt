@@ -2,12 +2,11 @@ package com.logger.xlog.sample
 
 import android.app.Application
 import android.os.Build
-import com.logger.xlog.LogConfiguration
 import com.logger.xlog.LogLevel
 import com.logger.xlog.XLog
 import com.logger.xlog.flattener.ClassicFlattener
-import com.logger.xlog.interceptor.AndroidReleaseInterceptor
 import com.logger.xlog.interceptor.AllowAllTagsFilterInterceptor
+import com.logger.xlog.interceptor.AndroidReleaseInterceptor
 import com.logger.xlog.printer.AndroidPrinter
 import com.logger.xlog.printer.Printer
 import com.logger.xlog.printer.file.FilePrinter
@@ -28,14 +27,14 @@ class App : Application() {
      */
     private fun initXlog() {
         val globalTag = getString(R.string.global_tag)
-        val config = LogConfiguration.Builder()
-            .logLevel(
+        val config = XLog.createNewConfig()
+            .setLogLevel(
                 if (BuildConfig.DEBUG)
                     LogLevel.ALL // Specify log level, logs below this level won't be printed, default: LogLevel.ALL
                 else
                     LogLevel.WARN
             )
-            .tag(globalTag) // Specify TAG, default: "X-LOG"
+            .setTag(globalTag) // Specify TAG, default: "X-LOG"
             // .enableThreadInfo()                                 // Enable thread info, disabled by default
             // .enableStackTrace(2)                                // Enable stack trace info with depth 2, disabled by default
             // .enableBorder()                                     // Enable border, disabled by default
@@ -49,7 +48,7 @@ class App : Application() {
             //     new AnyClassObjectFormatter())                  // Use Object.toString() by default
             .addInterceptor(
                 if (BuildConfig.DEBUG) {
-                     AllowAllTagsFilterInterceptor()
+                    AllowAllTagsFilterInterceptor()
 //                    AndroidReleaseInterceptor(
 //                        "$globalTag-all",
 //                        listOf(globalTag, "test"),
@@ -65,7 +64,6 @@ class App : Application() {
             ) // .addInterceptor(new WhitelistTagsFilterInterceptor( // Add whitelist tags filter
             //     "whitelist1", "whitelist2", "whitelist3"))
             // .addInterceptor(new MyInterceptor())                // Add a log interceptor
-            .build()
 
         val androidPrinter: Printer =
             AndroidPrinter() // Printer that print the log using android.util.Log
@@ -102,7 +100,6 @@ class App : Application() {
             androidPrinter,  // Specify printers, if no printer is specified, AndroidPrinter(for Android)/ConsolePrinter(for java) will be used.
             filePrinter
         )
-
         // For future usage: partial usage in MainActivity.
         globalFilePrinter = filePrinter
     }

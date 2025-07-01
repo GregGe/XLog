@@ -65,6 +65,7 @@ import androidx.core.content.ContextCompat
 import com.logger.xlog.LogLevel
 import com.logger.xlog.Logger
 import com.logger.xlog.XLog
+import com.logger.xlog.extensions.newConfig
 import com.logger.xlog.flattener.Flattener
 import com.logger.xlog.flattener.PatternFlattener
 import com.logger.xlog.formatter.message.json.DefaultJsonFormatter
@@ -80,15 +81,14 @@ import com.logger.xlog.sample.ui.MainActivity.Companion.STACK_TRACE_DEPTHS
 class MainActivity : ComponentActivity() {
     companion object {
         private const val MESSAGE = "Simple message"
-        val LEVELS =
-            listOf(
-                LogLevel.VERBOSE,
-                LogLevel.DEBUG,
-                LogLevel.INFO,
-                LogLevel.WARN,
-                LogLevel.ERROR,
-                LogLevel.ASSERT
-            )
+        val LEVELS = listOf(
+            LogLevel.VERBOSE,
+            LogLevel.DEBUG,
+            LogLevel.INFO,
+            LogLevel.WARN,
+            LogLevel.ERROR,
+            LogLevel.ASSERT
+        )
         val STACK_TRACE_DEPTHS = listOf(0, 1, 2, 3, 4, 5)
     }
 
@@ -129,8 +129,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             XLogTheme {
-                MainScreen(
-                    hasPermission = hasPermission,
+                MainScreen(hasPermission = hasPermission,
                     onPrintClick = { config -> printLog(config) },
                     onTagChangeClick = { showTagDialog.value = true },
                     logs = composePrinter.logs
@@ -158,7 +157,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // 打印欢迎消息
-        XLog.printers(composePrinter).i("XLog is ready.\nPrint your log now!")
+        XLog.newConfig { printers(composePrinter) }.i("XLog is ready.\nPrint your log now!")
 
         printAndroidLog()
     }
@@ -173,10 +172,14 @@ class MainActivity : ComponentActivity() {
 
     private fun printAndroidLog() {
 
-        val logger = Logger.Builder().logLevel(LogLevel.ALL)
-            .enableBorder().enableThreadInfo()
-            .enableStackTrace(5).jsonFormatter(DefaultJsonFormatter())
-            .xmlFormatter(DefaultXmlFormatter()).build()
+        val logger = XLog.newConfig {
+            setLogLevel(LogLevel.ALL)
+            enableBorder()
+            enableThreadInfo()
+            enableStackTrace(5)
+            jsonFormatter(DefaultJsonFormatter())
+            xmlFormatter(DefaultXmlFormatter())
+        }
 
         logger.apply {
             v(message)
@@ -209,7 +212,7 @@ class MainActivity : ComponentActivity() {
         } else {
             "Permission not granted.\nCan not log to file."
         }
-        XLog.printers(composePrinter).i(message)
+        XLog.newConfig { printers(composePrinter) }.i(message)
     }
 
     private fun hasPermission(): Boolean {
@@ -236,7 +239,7 @@ class MainActivity : ComponentActivity() {
     private fun printLog(config: LogConfig) {
         Logger.Builder().apply {
             if (config.tag.isNotBlank()) {
-                tag(config.tag)
+                setTag(config.tag)
             }
 
             if (config.showThreadInfo) {

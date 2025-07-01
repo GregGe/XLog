@@ -13,7 +13,7 @@ testng = "7.3.0"
 gson = "2.13.1"
 mockito="3.4.6"
 mavenPublish="0.33.0"
-xlog="0.0.1"
+xlog="0.0.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

@@ -1,10 +1,9 @@
 package com.logger.xlog.message
 
-import com.logger.xlog.LogConfiguration
 import com.logger.xlog.LogItem
 import com.logger.xlog.LogLevel
+import com.logger.xlog.LoggerConfig
 import com.logger.xlog.XLog
-import com.logger.xlog.formatter.message.json.DefaultJsonFormatter
 import com.logger.xlog.formatter.message.json.JsonFormatter
 import com.logger.xlog.printer.AndroidPrinter
 import com.logger.xlog.utils.AssertUtil
@@ -37,16 +36,17 @@ class DefaultJsonFormatterTest {
         XLogUtil.beforeTest()
         val mockJson: JSONObject = Mockito.mock(JSONObject::class.java)
         Mockito.`when`(mockJson.toString()).thenReturn(formated)
-        val logConfiguration =
-            LogConfiguration.Builder().logLevel(LogLevel.ALL).jsonFormatter(object : JsonFormatter {
-                override fun format(data: String?): String? {
+        val loggerConfig =
+            LoggerConfig().setLogLevel(LogLevel.ALL).jsonFormatter(object : JsonFormatter {
+                override fun format(data: String?): String {
                     return mockJson.toString()
                 }
-
-            }).build()
-        XLog.init(logConfiguration, object : AndroidPrinter() {
+            })
+        XLog.init(loggerConfig, object : AndroidPrinter() {
             override fun printChunk(logLevel: Int, tag: String?, msg: String) {
-                logContainer.add(LogItem(logLevel, tag, msg))
+                tag?.let {
+                    logContainer.add(LogItem(logLevel, tag, msg))
+                }
             }
         })
     }
