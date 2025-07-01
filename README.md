@@ -36,6 +36,9 @@ XLog.e(message, throwable);
 支持格式化字符串，这样你就不需要去使用 `+` 拼接一大串的字符串和变量。
 
 ```kotlin
+XLog.d("你好$name，我今年 $age 岁")
+
+// 主要方便 Java 调用
 XLog.d("你好%s，我今年 %d 岁", "Elvis", 20);
 ```
 
@@ -67,7 +70,7 @@ XLog.d(bundle);
 XLog.d(object);
 ```
 
-注意：以上内容中的 `v/d/i/w/e` 是可以相互替换的，`v` 表示 `VERBOSE`，`d` 表示 `DEBUG`，`i` for `INFO`，`w` 表示 `WARNING`，`e` 表示 `ERROR`。
+注意：以上内容中的 `v/d/i/w/e/wtf` 是可以相互替换的，`v` 表示 `VERBOSE`，`d` 表示 `DEBUG`，`i` for `INFO`，`w` 表示 `WARNING`，`e` 表示 `ERROR`, `wtf` 表示 `ASSERT`。
 
 ## 配置
 
@@ -138,6 +141,8 @@ val logger = logger.cloneConfig {
     // 其他配置
 }
 logger.d("定制了 TAG 的消息");
+
+
 // logger.updateConfig 更新配置，使用原 Logger 实例
 // logger.cloneConfig  克隆配置，创建新 Logger 实例
 // logger.newConfig    初始化新配置，默认继承 tag 和 level，创建新 Logger 实例
